@@ -45,8 +45,8 @@ class Argument<T, K>(
         context.transformValue(rawValue as K)
 
     @Suppress("UNCHECKED_CAST")
-    fun invokeIsValid(context: Context, rawValue: Any?, result: TransformResult<T>): Boolean =
-        isValid?.invoke(context, rawValue as K, result) ?: when (result) {
+    fun invokeIsValid(context: Context, rawValue: Any?, result: TransformResult<*>): Boolean =
+        isValid?.invoke(context, rawValue as K, result as TransformResult<T>) ?: when (result) {
             is TransformResult.Success -> true
             TransformResult.Failure -> false
         }

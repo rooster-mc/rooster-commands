@@ -4,9 +4,9 @@ import dev.rooster.commands.ArgumentType
 import dev.jorel.commandapi.arguments.Argument as CmdArg
 import dev.jorel.commandapi.arguments.*
 import org.bukkit.Location
-import org.bukkit.Material
 import org.bukkit.World
 import org.bukkit.entity.Player
+import org.bukkit.inventory.ItemStack
 
 data class LiteralArgumentType(val name: String) : ArgumentType<String>
 
@@ -21,7 +21,7 @@ data object GreedyStringArgumentType : ArgumentType<String>
 
 data object PlayerArgumentType : ArgumentType<Player>
 data object WorldArgumentType : ArgumentType<World>
-data object MaterialArgumentType : ArgumentType<Material>
+data object ItemStackArgumentType : ArgumentType<ItemStack>
 data object LocationArgumentType : ArgumentType<Location>
 
 @Suppress("UNCHECKED_CAST")
@@ -55,7 +55,7 @@ fun <K> ArgumentType<K>.toCommandApiArg(key: String): CmdArg<K> = (when (this) {
 
     PlayerArgumentType -> PlayerArgument(key)
     WorldArgumentType -> WorldArgument(key)
-    MaterialArgumentType -> MaterialArgument(key)
+    ItemStackArgumentType -> ItemStackArgument(key)
     LocationArgumentType -> LocationArgument(key)
 
     else -> error("Unknown ArgumentType: ${this::class.simpleName}. Provide a custom toCommandApiArg mapping.")

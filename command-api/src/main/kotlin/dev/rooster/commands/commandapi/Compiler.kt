@@ -6,11 +6,12 @@ import dev.rooster.commands.SyntaxResult
 import dev.rooster.commands.TransformResult
 import dev.jorel.commandapi.CommandTree
 import dev.jorel.commandapi.arguments.Argument as CmdArg
+import dev.jorel.commandapi.StringTooltip
 import dev.jorel.commandapi.arguments.ArgumentSuggestions
 import dev.jorel.commandapi.arguments.CustomArgument
 import dev.jorel.commandapi.arguments.CustomArgument.CustomArgumentException
-import dev.jorel.commandapi.arguments.StringTooltip
 import dev.jorel.commandapi.executors.CommandArguments
+import dev.jorel.commandapi.executors.CommandExecutor
 import org.bukkit.command.CommandSender
 
 object Compiler {
@@ -45,7 +46,7 @@ object Compiler {
 
         argument.suggestions?.let { provider ->
             cmdArg.replaceSuggestions(ArgumentSuggestions.stringsWithTooltips { info ->
-                val ctx = Context(info.sender, buildPartialContext(info.sender, info.previousArgs(), ancestorPath))
+                val ctx = Context(info.sender(), buildPartialContext(info.sender(), info.previousArgs(), ancestorPath))
                 provider(ctx)
                     .map { s -> StringTooltip.ofString(s.value, s.tooltip) }
                     .toTypedArray()
@@ -53,9 +54,9 @@ object Compiler {
         }
 
         if (argument.executor != null) {
-            cmdArg.anyExecutor { sender, args ->
+            cmdArg.executes(CommandExecutor { sender, args ->
                 invokeExecutor(sender, args, fullPath)
-            }
+            })
         }
 
         argument.children.forEach { child ->

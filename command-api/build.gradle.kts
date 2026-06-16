@@ -14,6 +14,7 @@ repositories {
 dependencies {
     implementation(project(":"))
     compileOnly("io.papermc.paper:paper-api:1.21.5-R0.1-SNAPSHOT")
+    compileOnly("dev.jorel:commandapi-bukkit-core:10.0.0")
     compileOnly("dev.jorel:commandapi-bukkit-kotlin:10.0.0")
 }
 
