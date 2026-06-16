@@ -1,6 +1,6 @@
-package dev.cypdashuhn.commands.commandapi
+package dev.rooster.commands.commandapi
 
-import dev.cypdashuhn.commands.ArgumentType
+import dev.rooster.commands.ArgumentType
 import dev.jorel.commandapi.arguments.Argument as CmdArg
 import dev.jorel.commandapi.arguments.*
 import org.bukkit.Location

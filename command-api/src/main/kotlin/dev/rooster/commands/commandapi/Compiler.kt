@@ -1,9 +1,9 @@
-package dev.cypdashuhn.commands.commandapi
+package dev.rooster.commands.commandapi
 
-import dev.cypdashuhn.commands.Argument
-import dev.cypdashuhn.commands.Context
-import dev.cypdashuhn.commands.SyntaxResult
-import dev.cypdashuhn.commands.TransformResult
+import dev.rooster.commands.Argument
+import dev.rooster.commands.Context
+import dev.rooster.commands.SyntaxResult
+import dev.rooster.commands.TransformResult
 import dev.jorel.commandapi.CommandTree
 import dev.jorel.commandapi.arguments.Argument as CmdArg
 import dev.jorel.commandapi.arguments.ArgumentSuggestions
@@ -93,7 +93,6 @@ object Compiler {
         val contextArgs = mutableMapOf<String, Any>()
 
         for (node in path) {
-            // LiteralArgument is not stored in CommandArguments — recover the name directly
             val rawValue: Any? = when (val t = node.type) {
                 is LiteralArgumentType -> t.name
                 else -> args[node.key]

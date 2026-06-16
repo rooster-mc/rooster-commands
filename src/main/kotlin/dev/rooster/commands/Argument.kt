@@ -1,4 +1,4 @@
-package dev.cypdashuhn.commands
+package dev.rooster.commands
 
 import org.bukkit.command.CommandSender
 
