@@ -35,6 +35,7 @@ class ArgumentBuilder<T, K>(
     private var onMissingChildCallback: (Context.() -> Unit)? = null
     private var syntaxValidCallback: (SyntaxContext<K>.() -> SyntaxResult)? = null
     private var validCallback: (Context.(K, TransformResult<T>) -> IsValidResult)? = null
+    private var isTargetCallback: (Context.(K) -> Boolean)? = null
     private var isOptional: Boolean = false
     private val derivations = mutableMapOf<String, Context.() -> Any?>()
     private val pendingChildren = mutableListOf<ArgumentBuilder<*, *>>()
@@ -50,6 +51,7 @@ class ArgumentBuilder<T, K>(
     fun onMissing(block: Context.() -> Unit) = apply { onMissingCallback = block }
     fun onMissingChild(block: Context.() -> Unit) = apply { onMissingChildCallback = block }
     fun isValid(block: Context.(K, TransformResult<T>) -> IsValidResult) = apply { validCallback = block }
+    fun isTarget(block: Context.(K) -> Boolean) = apply { isTargetCallback = block }
     fun isSyntaxValid(block: SyntaxContext<K>.() -> SyntaxResult) = apply { syntaxValidCallback = block }
     fun optional() = apply { isOptional = true }
     fun derive(key: String, block: Context.() -> Any?) = apply { derivations[key] = block }
@@ -80,6 +82,7 @@ class ArgumentBuilder<T, K>(
         onMissingChild = onMissingChildCallback,
         isSyntaxValid = syntaxValidCallback,
         isValid = validCallback,
+        isTarget = isTargetCallback,
         isOptional = isOptional,
         derivations = derivations.toMap(),
     )

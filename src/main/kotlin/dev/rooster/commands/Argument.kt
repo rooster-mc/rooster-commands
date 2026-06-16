@@ -45,6 +45,7 @@ class Argument<T, K>(
     val isValid: (Context.(K, TransformResult<T>) -> IsValidResult)? = null,
     val isOptional: Boolean = false,
     val derivations: Map<String, Context.() -> Any?> = emptyMap(),
+    val isTarget: (Context.(K) -> Boolean)? = null,
 ) {
     @Suppress("UNCHECKED_CAST")
     fun invokeTransform(context: Context, rawValue: Any?): TransformResult<T> =
@@ -60,4 +61,8 @@ class Argument<T, K>(
     @Suppress("UNCHECKED_CAST")
     fun invokeSyntaxValid(sender: CommandSender, raw: String, typedValue: Any?): SyntaxResult =
         isSyntaxValid?.invoke(SyntaxContext(sender, raw, typedValue as K)) ?: SyntaxResult.Valid
+
+    @Suppress("UNCHECKED_CAST")
+    fun invokeIsTarget(context: Context, rawValue: Any?): Boolean =
+        isTarget?.invoke(context, rawValue as K) ?: true
 }
