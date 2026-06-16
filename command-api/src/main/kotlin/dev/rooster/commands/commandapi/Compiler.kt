@@ -2,6 +2,7 @@ package dev.rooster.commands.commandapi
 
 import dev.rooster.commands.Argument
 import dev.rooster.commands.Context
+import dev.rooster.commands.IsValidResult
 import dev.rooster.commands.SyntaxResult
 import dev.rooster.commands.TransformResult
 import dev.jorel.commandapi.CommandTree
@@ -77,10 +78,14 @@ object Compiler {
                 is LiteralArgumentType -> t.name
                 else -> previousArgs[node.key] ?: continue
             }
-            val ctx = Context(sender, contextArgs.toMap())
-            val result = node.invokeTransform(ctx, rawValue)
+            val result = node.invokeTransform(Context(sender, contextArgs.toMap()), rawValue)
             if (result is TransformResult.Success<*>) {
                 result.value?.let { contextArgs[node.key] = it }
+            }
+        }
+        for (node in path) {
+            for ((key, block) in node.derivations) {
+                block(Context(sender, contextArgs.toMap()))?.let { contextArgs[key] = it }
             }
         }
         return contextArgs
@@ -98,14 +103,22 @@ object Compiler {
                 is LiteralArgumentType -> t.name
                 else -> args[node.key]
             }
-
             val ctx = Context(sender, contextArgs.toMap())
             val transformResult = node.invokeTransform(ctx, rawValue)
+            val validResult = node.invokeIsValid(ctx, rawValue, transformResult)
+            if (validResult is IsValidResult.Invalid) {
+                validResult.error(Context(sender, contextArgs.toMap()))
+                return
+            }
+            if (transformResult !is TransformResult.Success<*>) {
+                error("Argument '${node.key}': isValid returned Valid but transformValue returned Failure")
+            }
+            transformResult.value?.let { contextArgs[node.key] = it }
+        }
 
-            if (!node.invokeIsValid(ctx, rawValue, transformResult)) return
-
-            if (transformResult is TransformResult.Success<*>) {
-                transformResult.value?.let { contextArgs[node.key] = it }
+        for (node in path) {
+            for ((key, block) in node.derivations) {
+                block(Context(sender, contextArgs.toMap()))?.let { contextArgs[key] = it }
             }
         }
 

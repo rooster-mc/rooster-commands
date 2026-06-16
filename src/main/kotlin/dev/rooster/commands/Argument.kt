@@ -23,6 +23,11 @@ sealed class SyntaxResult {
     data class Invalid(val message: String? = null) : SyntaxResult()
 }
 
+sealed class IsValidResult {
+    data object Valid : IsValidResult()
+    data class Invalid(val error: Context.() -> Unit) : IsValidResult()
+}
+
 data class Suggestion(val value: String, val tooltip: String? = null)
 
 interface ArgumentType<out K>
@@ -37,18 +42,19 @@ class Argument<T, K>(
     val onMissing: (Context.() -> Unit)? = null,
     val onMissingChild: (Context.() -> Unit)? = null,
     val isSyntaxValid: (SyntaxContext<K>.() -> SyntaxResult)? = null,
-    val isValid: (Context.(K, TransformResult<T>) -> Boolean)? = null,
+    val isValid: (Context.(K, TransformResult<T>) -> IsValidResult)? = null,
     val isOptional: Boolean = false,
+    val derivations: Map<String, Context.() -> Any?> = emptyMap(),
 ) {
     @Suppress("UNCHECKED_CAST")
     fun invokeTransform(context: Context, rawValue: Any?): TransformResult<T> =
         context.transformValue(rawValue as K)
 
     @Suppress("UNCHECKED_CAST")
-    fun invokeIsValid(context: Context, rawValue: Any?, result: TransformResult<*>): Boolean =
+    fun invokeIsValid(context: Context, rawValue: Any?, result: TransformResult<*>): IsValidResult =
         isValid?.invoke(context, rawValue as K, result as TransformResult<T>) ?: when (result) {
-            is TransformResult.Success -> true
-            TransformResult.Failure -> false
+            is TransformResult.Success -> IsValidResult.Valid
+            TransformResult.Failure -> IsValidResult.Invalid {}
         }
 
     @Suppress("UNCHECKED_CAST")

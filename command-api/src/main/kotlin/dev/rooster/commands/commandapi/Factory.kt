@@ -1,7 +1,9 @@
 package dev.rooster.commands.commandapi
 
 import dev.rooster.commands.ArgumentBuilder
+import dev.rooster.commands.ArgumentPart
 import dev.rooster.commands.ChildrenScope
+import dev.rooster.commands.Context
 import dev.rooster.commands.TransformResult
 import dev.jorel.commandapi.CommandTree
 import org.bukkit.Location
@@ -96,3 +98,19 @@ fun ChildrenScope.location(key: String): ArgumentBuilder<Location, Location> =
 
 fun ChildrenScope.location(key: String, block: ChildrenScope.() -> Unit): ArgumentBuilder<Location, Location> =
     ArgumentBuilder(key, LocationArgumentType) { TransformResult.Success(it) }.then(block).also { register(it) }
+
+// ── Compound parts ───────────────────────────────────────────────────────────
+
+fun coordsPart(prefix: String): ArgumentPart<Int, Int> {
+    val z = ArgumentBuilder("${prefix}_z", IntegerArgumentType()) { TransformResult.Success(it) }
+        .derive(prefix) { Triple(args["${prefix}_x"] as Int, args["${prefix}_y"] as Int, args["${prefix}_z"] as Int) }
+    val y = ArgumentBuilder("${prefix}_y", IntegerArgumentType()) { TransformResult.Success(it) }.then(z)
+    val x = ArgumentBuilder("${prefix}_x", IntegerArgumentType()) { TransformResult.Success(it) }.then(y)
+    return ArgumentPart(head = x, tail = z)
+}
+
+fun ChildrenScope.coords(prefix: String): ArgumentBuilder<Int, Int> {
+    val part = coordsPart(prefix)
+    register(part.head)
+    return part.tail
+}

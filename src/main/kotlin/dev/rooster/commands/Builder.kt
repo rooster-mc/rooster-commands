@@ -3,6 +3,11 @@ package dev.rooster.commands
 @DslMarker
 annotation class CommandDsl
 
+class ArgumentPart<TailT, TailK>(
+    val head: ArgumentBuilder<*, *>,
+    val tail: ArgumentBuilder<TailT, TailK>,
+)
+
 @CommandDsl
 class ChildrenScope {
     internal val builders = mutableListOf<ArgumentBuilder<*, *>>()
@@ -29,8 +34,9 @@ class ArgumentBuilder<T, K>(
     private var onMissingCallback: (Context.() -> Unit)? = null
     private var onMissingChildCallback: (Context.() -> Unit)? = null
     private var syntaxValidCallback: (SyntaxContext<K>.() -> SyntaxResult)? = null
-    private var validCallback: (Context.(K, TransformResult<T>) -> Boolean)? = null
+    private var validCallback: (Context.(K, TransformResult<T>) -> IsValidResult)? = null
     private var isOptional: Boolean = false
+    private val derivations = mutableMapOf<String, Context.() -> Any?>()
     private val pendingChildren = mutableListOf<ArgumentBuilder<*, *>>()
     private val builtChildren = mutableListOf<Argument<*, *>>()
 
@@ -43,9 +49,10 @@ class ArgumentBuilder<T, K>(
     fun onExecute(block: Context.() -> Unit) = apply { executorCallback = block }
     fun onMissing(block: Context.() -> Unit) = apply { onMissingCallback = block }
     fun onMissingChild(block: Context.() -> Unit) = apply { onMissingChildCallback = block }
-    fun isValid(block: Context.(K, TransformResult<T>) -> Boolean) = apply { validCallback = block }
+    fun isValid(block: Context.(K, TransformResult<T>) -> IsValidResult) = apply { validCallback = block }
     fun isSyntaxValid(block: SyntaxContext<K>.() -> SyntaxResult) = apply { syntaxValidCallback = block }
     fun optional() = apply { isOptional = true }
+    fun derive(key: String, block: Context.() -> Any?) = apply { derivations[key] = block }
 
     fun then(block: ChildrenScope.() -> Unit) = apply {
         val scope = ChildrenScope()
@@ -56,6 +63,11 @@ class ArgumentBuilder<T, K>(
 
     fun then(child: ArgumentBuilder<*, *>) = apply { pendingChildren.add(child) }
     fun then(child: Argument<*, *>) = apply { builtChildren.add(child) }
+
+    fun <TailT, TailK> then(part: ArgumentPart<TailT, TailK>): ArgumentBuilder<TailT, TailK> {
+        pendingChildren.add(part.head)
+        return part.tail
+    }
 
     fun build(): Argument<T, K> = Argument(
         key = key,
@@ -69,5 +81,6 @@ class ArgumentBuilder<T, K>(
         isSyntaxValid = syntaxValidCallback,
         isValid = validCallback,
         isOptional = isOptional,
+        derivations = derivations.toMap(),
     )
 }
