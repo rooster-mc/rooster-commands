@@ -32,7 +32,7 @@ data class Suggestion(val value: String, val tooltip: String? = null)
 
 interface ArgumentType<out K>
 
-class Argument<T, K>(
+data class Argument<T, K>(
     val key: String,
     val type: ArgumentType<K>,
     val transformValue: Context.(K) -> TransformResult<T>,

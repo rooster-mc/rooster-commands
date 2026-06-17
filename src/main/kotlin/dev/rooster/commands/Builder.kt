@@ -42,7 +42,7 @@ class ArgumentBuilder<T, K>(
     CanOnExecute,
     CanOnMissing,
     CanOnMissingChild,
-    CanIsValid<T, K>,
+    CanExtendIsValid<T, K>,
     CanIsTarget<K>,
     CanIsSyntaxValid<K>,
     CanDerive,
@@ -54,7 +54,8 @@ class ArgumentBuilder<T, K>(
     override var onMissingCallback: (Context.() -> Unit)? = null
     override var onMissingChildCallback: (Context.() -> Unit)? = null
     override var syntaxValidCallback: (SyntaxContext<K>.() -> SyntaxResult)? = null
-    override var validCallback: (Context.(K, TransformResult<T>) -> IsValidResult)? = null
+    override val baseValidCallback: Context.(K, TransformResult<T>) -> IsValidResult = { _, _ -> IsValidResult.Valid }
+    override val validExtensions = mutableListOf<Context.(K, TransformResult<T>) -> IsValidResult>()
     override var isTargetCallback: (Context.(K) -> Boolean)? = null
     override var isOptional: Boolean = false
     override val derivations = mutableMapOf<String, Context.() -> Any?>()
@@ -71,7 +72,8 @@ class ArgumentBuilder<T, K>(
         onMissing = onMissingCallback,
         onMissingChild = onMissingChildCallback,
         isSyntaxValid = syntaxValidCallback,
-        isValid = validCallback,
+        isValid = if (validExtensions.isEmpty()) null
+                  else buildExtendedIsValid(baseValidCallback, validExtensions, null),
         isTarget = isTargetCallback,
         isOptional = isOptional,
         derivations = derivations.toMap(),

@@ -21,10 +21,8 @@ class ListBuilder<T>(
     override val validExtensions = mutableListOf<Context.(String, TransformResult<T>) -> IsValidResult>()
     override var validOverride: (Context.(String, TransformResult<T>) -> IsValidResult)? = null
 
-    override fun build(): Argument<T, String> {
-        inner.validCallback = buildExtendedIsValid(baseValidCallback, validExtensions, validOverride)
-        return inner.build()
-    }
+    override fun build(): Argument<T, String> =
+        inner.build().copy(isValid = buildExtendedIsValid(baseValidCallback, validExtensions, validOverride))
 }
 
 private fun <T> makeListBuilder(

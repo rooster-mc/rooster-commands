@@ -24,10 +24,6 @@ interface CanOnMissingChild {
 
 interface HasIsValid<T, K>
 
-interface CanIsValid<T, K> : HasIsValid<T, K> {
-    var validCallback: (Context.(K, TransformResult<T>) -> IsValidResult)?
-}
-
 interface CanExtendIsValid<T, K> : HasIsValid<T, K> {
     val baseValidCallback: Context.(K, TransformResult<T>) -> IsValidResult
     val validExtensions: MutableList<Context.(K, TransformResult<T>) -> IsValidResult>
@@ -78,9 +74,6 @@ fun <T : CanOnMissing> T.onMissing(block: Context.() -> Unit): T = apply {
 fun <T : CanOnMissingChild> T.onMissingChild(block: Context.() -> Unit): T = apply {
     onMissingChildCallback = block
 }
-
-fun <Self, T, K> Self.isValid(block: Context.(K, TransformResult<T>) -> IsValidResult): Self
-    where Self : CanIsValid<T, K> = apply { validCallback = block }
 
 fun <Self, T, K> Self.isValid(block: Context.(K, TransformResult<T>) -> IsValidResult): Self
     where Self : CanExtendIsValid<T, K> = apply { validExtensions.add(block) }
