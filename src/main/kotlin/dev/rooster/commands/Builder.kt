@@ -6,7 +6,15 @@ annotation class CommandDsl
 class ArgumentPart<TailT, TailK>(
     val head: ArgumentBuilder<*, *>,
     val tail: ArgumentBuilder<TailT, TailK>,
-)
+) : CanOnExecute, CanOnMissing {
+    override var executorCallback: (Context.() -> Unit)?
+        get() = tail.executorCallback
+        set(value) { tail.executorCallback = value }
+
+    override var onMissingCallback: (Context.() -> Unit)?
+        get() = tail.onMissingCallback
+        set(value) { tail.onMissingCallback = value }
+}
 
 @CommandDsl
 class ChildrenScope {
@@ -28,54 +36,35 @@ class ArgumentBuilder<T, K>(
     internal val key: String,
     internal val type: ArgumentType<K>,
     internal val defaultTransform: Context.(K) -> TransformResult<T>,
-) {
-    private var suggestionsProvider: (Context.() -> List<Suggestion>)? = null
-    private var executorCallback: (Context.() -> Unit)? = null
-    private var onMissingCallback: (Context.() -> Unit)? = null
-    private var onMissingChildCallback: (Context.() -> Unit)? = null
-    private var syntaxValidCallback: (SyntaxContext<K>.() -> SyntaxResult)? = null
-    private var validCallback: (Context.(K, TransformResult<T>) -> IsValidResult)? = null
-    private var isTargetCallback: (Context.(K) -> Boolean)? = null
-    private var isOptional: Boolean = false
-    private val derivations = mutableMapOf<String, Context.() -> Any?>()
-    private val pendingChildren = mutableListOf<ArgumentBuilder<*, *>>()
-    private val builtChildren = mutableListOf<Argument<*, *>>()
+) : AttachedNode,
+    CanSuggest,
+    CanOnExecute,
+    CanOnMissing,
+    CanOnMissingChild,
+    CanIsValid<T, K>,
+    CanIsTarget<K>,
+    CanIsSyntaxValid<K>,
+    CanDerive,
+    CanOptional,
+    CanThen {
 
-    fun suggest(block: Context.() -> List<Suggestion>) = apply { suggestionsProvider = block }
-
-    @JvmName("suggestStrings")
-    fun suggest(block: Context.() -> List<String>) = apply {
-        suggestionsProvider = { block().map { Suggestion(it) } }
-    }
-    fun onExecute(block: Context.() -> Unit) = apply { executorCallback = block }
-    fun onMissing(block: Context.() -> Unit) = apply { onMissingCallback = block }
-    fun onMissingChild(block: Context.() -> Unit) = apply { onMissingChildCallback = block }
-    fun isValid(block: Context.(K, TransformResult<T>) -> IsValidResult) = apply { validCallback = block }
-    fun isTarget(block: Context.(K) -> Boolean) = apply { isTargetCallback = block }
-    fun isSyntaxValid(block: SyntaxContext<K>.() -> SyntaxResult) = apply { syntaxValidCallback = block }
-    fun optional() = apply { isOptional = true }
-    fun derive(key: String, block: Context.() -> Any?) = apply { derivations[key] = block }
-
-    fun then(block: ChildrenScope.() -> Unit) = apply {
-        val scope = ChildrenScope()
-        scope.block()
-        pendingChildren.addAll(scope.builders)
-        builtChildren.addAll(scope.preBuilt)
-    }
-
-    fun then(child: ArgumentBuilder<*, *>) = apply { pendingChildren.add(child) }
-    fun then(child: Argument<*, *>) = apply { builtChildren.add(child) }
-
-    fun <TailT, TailK> then(part: ArgumentPart<TailT, TailK>): ArgumentBuilder<TailT, TailK> {
-        pendingChildren.add(part.head)
-        return part.tail
-    }
+    override var suggestCallback: (Context.() -> List<Suggestion>)? = null
+    override var executorCallback: (Context.() -> Unit)? = null
+    override var onMissingCallback: (Context.() -> Unit)? = null
+    override var onMissingChildCallback: (Context.() -> Unit)? = null
+    override var syntaxValidCallback: (SyntaxContext<K>.() -> SyntaxResult)? = null
+    override var validCallback: (Context.(K, TransformResult<T>) -> IsValidResult)? = null
+    override var isTargetCallback: (Context.(K) -> Boolean)? = null
+    override var isOptional: Boolean = false
+    override val derivations = mutableMapOf<String, Context.() -> Any?>()
+    override val pendingChildren = mutableListOf<ArgumentBuilder<*, *>>()
+    override val builtChildren = mutableListOf<Argument<*, *>>()
 
     fun build(): Argument<T, K> = Argument(
         key = key,
         type = type,
         transformValue = defaultTransform,
-        suggestions = suggestionsProvider,
+        suggestions = suggestCallback,
         children = builtChildren + pendingChildren.map { it.build() },
         executor = executorCallback,
         onMissing = onMissingCallback,

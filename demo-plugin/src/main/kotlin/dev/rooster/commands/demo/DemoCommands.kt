@@ -1,7 +1,6 @@
 package dev.rooster.commands.demo
 
-import dev.rooster.commands.CommandsScope
-import dev.rooster.commands.IsValidResult
+import dev.rooster.commands.*
 import dev.rooster.commands.types.*
 import dev.rooster.commands.types.wrappers.*
 import org.bukkit.entity.Player
@@ -25,9 +24,7 @@ fun CommandsScope.registerDemoCommands() {
             }
         }
         literal("coords") {
-            val part = coordsPart("pos")
-            register(part.head)
-            part.tail.onExecute {
+            coordsPart("pos").onExecute {
                 val (x, y, z) = args["pos"] as Triple<*, *, *>
                 sender.sendMessage("Coordinates: $x, $y, $z")
             }
