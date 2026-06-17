@@ -1,12 +1,7 @@
 package dev.rooster.commands.commandapi
 
-import dev.rooster.commands.Argument
-import dev.rooster.commands.ArgumentType
-import dev.rooster.commands.Context
-import dev.rooster.commands.IsValidResult
-import dev.rooster.commands.SyntaxContext
-import dev.rooster.commands.SyntaxResult
-import dev.rooster.commands.TransformResult
+import dev.rooster.commands.*
+import dev.rooster.commands.types.*
 import dev.jorel.commandapi.CommandTree
 import dev.jorel.commandapi.arguments.Argument as CmdArg
 import dev.jorel.commandapi.StringTooltip

@@ -1,6 +1,7 @@
 package dev.rooster.commands.commandapi
 
 import dev.rooster.commands.*
+import dev.rooster.commands.types.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
