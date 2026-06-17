@@ -1,0 +1,4 @@
+version: 1.0
+name: RoosterCommandsDemo
+main: dev.rooster.commands.demo.DemoPlugin
+api-version: 1.21
