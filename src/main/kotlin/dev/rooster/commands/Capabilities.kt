@@ -2,6 +2,10 @@ package dev.rooster.commands
 
 sealed interface AttachedNode
 
+interface Buildable {
+    fun build(): Argument<*, *>
+}
+
 interface CanSuggest {
     var suggestCallback: (Context.() -> List<Suggestion>)?
 }
@@ -50,7 +54,7 @@ interface CanOptional {
 }
 
 interface CanThen {
-    val pendingChildren: MutableList<ArgumentBuilder<*, *>>
+    val pendingChildren: MutableList<Buildable>
     val builtChildren: MutableList<Argument<*, *>>
 }
 
@@ -118,7 +122,7 @@ fun <T : CanThen> T.then(block: ChildrenScope.() -> Unit): T = apply {
     builtChildren.addAll(scope.preBuilt)
 }
 
-fun <T : CanThen> T.then(child: ArgumentBuilder<*, *>): T = apply {
+fun <T : CanThen> T.then(child: Buildable): T = apply {
     pendingChildren.add(child)
 }
 

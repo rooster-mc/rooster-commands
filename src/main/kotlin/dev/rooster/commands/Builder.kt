@@ -18,13 +18,13 @@ class ArgumentPart<TailT, TailK>(
 
 @CommandDsl
 class ChildrenScope {
-    internal val builders = mutableListOf<ArgumentBuilder<*, *>>()
+    internal val builders = mutableListOf<Buildable>()
     internal val preBuilt = mutableListOf<Argument<*, *>>()
 
-    fun register(builder: ArgumentBuilder<*, *>) { builders.add(builder) }
+    fun register(builder: Buildable) { builders.add(builder) }
     fun register(arg: Argument<*, *>) { preBuilt.add(arg) }
 
-    operator fun ArgumentBuilder<*, *>.unaryPlus() = this@ChildrenScope.register(this)
+    operator fun Buildable.unaryPlus() = this@ChildrenScope.register(this)
     operator fun Argument<*, *>.unaryPlus() = this@ChildrenScope.register(this)
 
     fun buildChildren(): List<Argument<*, *>> =
@@ -36,7 +36,8 @@ class ArgumentBuilder<T, K>(
     internal val key: String,
     internal val type: ArgumentType<K>,
     internal val defaultTransform: Context.(K) -> TransformResult<T>,
-) : AttachedNode,
+) : Buildable,
+    AttachedNode,
     CanSuggest,
     CanOnExecute,
     CanOnMissing,
@@ -57,10 +58,10 @@ class ArgumentBuilder<T, K>(
     override var isTargetCallback: (Context.(K) -> Boolean)? = null
     override var isOptional: Boolean = false
     override val derivations = mutableMapOf<String, Context.() -> Any?>()
-    override val pendingChildren = mutableListOf<ArgumentBuilder<*, *>>()
+    override val pendingChildren = mutableListOf<Buildable>()
     override val builtChildren = mutableListOf<Argument<*, *>>()
 
-    fun build(): Argument<T, K> = Argument(
+    override fun build(): Argument<T, K> = Argument(
         key = key,
         type = type,
         transformValue = defaultTransform,
