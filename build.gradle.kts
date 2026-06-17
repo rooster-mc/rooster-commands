@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm") version "2.0.21"
+    kotlin("jvm") version "2.2.0"
 }
 
 group = "dev.rooster"
@@ -11,6 +11,7 @@ repositories {
 }
 
 dependencies {
+    implementation("dev.rooster.core:rooster-core:1.0-SNAPSHOT")
     compileOnly("io.papermc.paper:paper-api:1.21.5-R0.1-SNAPSHOT")
     testImplementation("io.papermc.paper:paper-api:1.21.5-R0.1-SNAPSHOT")
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.0")
