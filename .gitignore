@@ -1,3 +1,8 @@
 /.gradle
 /build
 /command-api/build
+/.kotlin/errors
+/demo-plugin/.gradle
+/demo-plugin/.kotlin/errors
+/demo-plugin/build/classes/kotlin/main/META-INF
+/demo-plugin/build
