@@ -17,6 +17,37 @@ import dev.jorel.commandapi.executors.CommandArguments
 import dev.jorel.commandapi.executors.CommandExecutor
 import org.bukkit.command.CommandSender
 
+internal data class MergedArgumentInfo(
+    val syntheticKey: String,
+    val routeKey: String,
+    val ordered: List<Argument<*, *>>,
+    val mergedArg: Argument<Any?, Any?>,
+)
+
+@Suppress("UNCHECKED_CAST")
+internal fun Argument<*, *>.withRouteIsTarget(routeKey: String, routeIndex: Int): Argument<*, *> {
+    val existing = isTarget as (Context.(Any?) -> Boolean)?
+    val annotated: Context.(Any?) -> Boolean = { rawValue ->
+        (args[routeKey] as? Int) == routeIndex &&
+            (existing == null || existing.invoke(this, rawValue))
+    }
+    return Argument(
+        key = key,
+        type = type as ArgumentType<Any?>,
+        transformValue = transformValue as Context.(Any?) -> TransformResult<Any?>,
+        suggestions = suggestions,
+        children = children,
+        executor = executor,
+        onMissing = onMissing,
+        onMissingChild = onMissingChild,
+        isSyntaxValid = isSyntaxValid as (SyntaxContext<Any?>.() -> SyntaxResult)?,
+        isValid = isValid as (Context.(Any?, TransformResult<Any?>) -> IsValidResult)?,
+        isOptional = isOptional,
+        derivations = derivations,
+        isTarget = annotated,
+    )
+}
+
 object Compiler {
 
     fun compile(label: String, vararg arguments: Argument<*, *>): CommandTree {
@@ -26,66 +57,7 @@ object Compiler {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun compileNode(
-        argument: Argument<*, *>,
-        ancestorPath: List<Argument<*, *>>,
-    ): CmdArg<*> {
-        val fullPath = ancestorPath + argument
-        val baseArg = argument.type.toCommandApiArg(argument.key)
-
-        val cmdArg = if (argument.type is LiteralArgumentType) {
-            baseArg
-        } else {
-            CustomArgument(baseArg as CmdArg<Any?>) { info ->
-                val result = argument.invokeSyntaxValid(info.sender(), info.input(), info.currentInput())
-                if (result is SyntaxResult.Invalid) {
-                    throw CustomArgumentException.fromString(result.message ?: "Invalid argument")
-                }
-                info.currentInput()
-            }
-        }
-
-        argument.suggestions?.let { provider ->
-            cmdArg.replaceSuggestions(ArgumentSuggestions.stringsWithTooltips { info ->
-                val ctx = Context(info.sender(), buildPartialContext(info.sender(), info.previousArgs(), ancestorPath))
-                provider(ctx)
-                    .map { s -> StringTooltip.ofString(s.value, s.tooltip) }
-                    .toTypedArray()
-            })
-        }
-
-        if (argument.executor != null) {
-            cmdArg.executes(CommandExecutor { sender, args ->
-                invokeExecutor(sender, args, fullPath)
-            })
-        }
-
-        compileChildren(argument.children, fullPath).forEach { child ->
-            cmdArg.then(child)
-        }
-
-        return cmdArg
-    }
-
-    private fun compileChildren(
-        children: List<Argument<*, *>>,
-        ancestorPath: List<Argument<*, *>>,
-    ): List<CmdArg<*>> {
-        val groups = children.groupBy { it.type::class }
-        return groups.values.flatMap { group ->
-            if (group.size == 1 || group[0].type is LiteralArgumentType) {
-                group.map { compileNode(it, ancestorPath) }
-            } else {
-                listOf(compileMergedNode(group, ancestorPath))
-            }
-        }
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun compileMergedNode(
-        alternatives: List<Argument<*, *>>,
-        ancestorPath: List<Argument<*, *>>,
-    ): CmdArg<*> {
+    internal fun buildMergedArgument(alternatives: List<Argument<*, *>>): MergedArgumentInfo {
         val wildcards = alternatives.filter { it.isTarget == null }
         require(wildcards.size <= 1) {
             "Ambiguous merge: multiple arguments without isTarget at the same level: " +
@@ -97,12 +69,10 @@ object Compiler {
         val routeKey = "_route_$syntheticKey"
 
         val derivations: Map<String, Context.() -> Any?> = buildMap {
-            // Route key first — individual alt key derivations read it
             put(routeKey) {
                 val rawValue = args[syntheticKey]
                 ordered.indexOfFirst { alt -> alt.invokeIsTarget(this, rawValue) }.takeIf { it >= 0 }
             }
-            // Each alt key stores the winner's T value; null if this alt lost
             ordered.forEachIndexed { index, alt ->
                 put(alt.key) altKey@{
                     if ((args[routeKey] as? Int) != index) return@altKey null
@@ -132,6 +102,78 @@ object Compiler {
             executor = mergedExecutor,
         )
 
+        return MergedArgumentInfo(syntheticKey, routeKey, ordered, mergedArg)
+    }
+
+    // Test entry points — avoid needing CommandArguments in tests
+    internal fun executeRaw(sender: CommandSender, rawArgs: Map<String, Any?>, path: List<Argument<*, *>>) =
+        executePathCore(sender, rawArgs::get, path)
+
+    internal fun buildContextRaw(sender: CommandSender, rawArgs: Map<String, Any?>, path: List<Argument<*, *>>) =
+        buildContextCore(sender, rawArgs::get, path)
+
+    @Suppress("UNCHECKED_CAST")
+    private fun compileNode(
+        argument: Argument<*, *>,
+        ancestorPath: List<Argument<*, *>>,
+    ): CmdArg<*> {
+        val fullPath = ancestorPath + argument
+        val baseArg = argument.type.toCommandApiArg(argument.key)
+
+        val cmdArg = if (argument.type is LiteralArgumentType) {
+            baseArg
+        } else {
+            CustomArgument(baseArg as CmdArg<Any?>) { info ->
+                val result = argument.invokeSyntaxValid(info.sender(), info.input(), info.currentInput())
+                if (result is SyntaxResult.Invalid) {
+                    throw CustomArgumentException.fromString(result.message ?: "Invalid argument")
+                }
+                info.currentInput()
+            }
+        }
+
+        argument.suggestions?.let { provider ->
+            cmdArg.replaceSuggestions(ArgumentSuggestions.stringsWithTooltips { info ->
+                val ctx = Context(info.sender(), buildContextCore(info.sender(), { info.previousArgs()[it] }, ancestorPath))
+                provider(ctx)
+                    .map { s -> StringTooltip.ofString(s.value, s.tooltip) }
+                    .toTypedArray()
+            })
+        }
+
+        if (argument.executor != null) {
+            cmdArg.executes(CommandExecutor { sender, args ->
+                executePathCore(sender, { args[it] }, fullPath)
+            })
+        }
+
+        compileChildren(argument.children, fullPath).forEach { child ->
+            cmdArg.then(child)
+        }
+
+        return cmdArg
+    }
+
+    private fun compileChildren(
+        children: List<Argument<*, *>>,
+        ancestorPath: List<Argument<*, *>>,
+    ): List<CmdArg<*>> {
+        val groups = children.groupBy { it.type::class }
+        return groups.values.flatMap { group ->
+            if (group.size == 1 || group[0].type is LiteralArgumentType) {
+                group.map { compileNode(it, ancestorPath) }
+            } else {
+                listOf(compileMergedNode(group, ancestorPath))
+            }
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun compileMergedNode(
+        alternatives: List<Argument<*, *>>,
+        ancestorPath: List<Argument<*, *>>,
+    ): CmdArg<*> {
+        val (syntheticKey, routeKey, ordered, mergedArg) = buildMergedArgument(alternatives)
         val fullPath = ancestorPath + mergedArg
 
         val cmdArg = CustomArgument(ordered[0].type.toCommandApiArg(syntheticKey) as CmdArg<Any?>) { info ->
@@ -145,10 +187,7 @@ object Compiler {
         val allSuggestions = ordered.mapNotNull { it.suggestions }
         if (allSuggestions.isNotEmpty()) {
             cmdArg.replaceSuggestions(ArgumentSuggestions.stringsWithTooltips { info ->
-                val ctx = Context(info.sender(), buildPartialContext(info.sender(), info.previousArgs(), ancestorPath))
-                // Filter by isTarget so only the matching branch's suggestions show.
-                // Auto-derived isTargets ignore K, so passing currentInput is safe for those.
-                // Developer-written isTargets may also use K — we pass currentInput as best effort.
+                val ctx = Context(info.sender(), buildContextCore(info.sender(), { info.previousArgs()[it] }, ancestorPath))
                 ordered
                     .filter { alt ->
                         alt.suggestions != null &&
@@ -162,12 +201,10 @@ object Compiler {
 
         if (mergedArg.executor != null) {
             cmdArg.executes(CommandExecutor { sender, args ->
-                invokeExecutor(sender, args, fullPath)
+                executePathCore(sender, { args[it] }, fullPath)
             })
         }
 
-        // Annotate each alternative's children with an auto-derived isTarget based on parent route,
-        // then compile the union — same-type conflicts among children are resolved by another merge.
         val annotatedChildren = ordered.flatMapIndexed { index, alt ->
             alt.children.map { child -> child.withRouteIsTarget(routeKey, index) }
         }
@@ -178,42 +215,16 @@ object Compiler {
         return cmdArg
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun Argument<*, *>.withRouteIsTarget(routeKey: String, routeIndex: Int): Argument<*, *> {
-        val existing = isTarget as (Context.(Any?) -> Boolean)?
-        val annotated: Context.(Any?) -> Boolean = { rawValue ->
-            (args[routeKey] as? Int) == routeIndex &&
-                (existing == null || existing.invoke(this, rawValue))
-        }
-        return Argument(
-            key = key,
-            type = type as ArgumentType<Any?>,
-            transformValue = transformValue as Context.(Any?) -> TransformResult<Any?>,
-            suggestions = suggestions,
-            children = children,
-            executor = executor,
-            onMissing = onMissing,
-            onMissingChild = onMissingChild,
-            isSyntaxValid = isSyntaxValid as (SyntaxContext<Any?>.() -> SyntaxResult)?,
-            isValid = isValid as (Context.(Any?, TransformResult<Any?>) -> IsValidResult)?,
-            isOptional = isOptional,
-            derivations = derivations,
-            isTarget = annotated,
-        )
-    }
-
-    // Derivations run immediately after each node's transform so that route keys set by a merged
-    // node are available to subsequent nodes' isTarget checks during the same phase-1 pass.
-    private fun buildPartialContext(
+    private fun buildContextCore(
         sender: CommandSender,
-        previousArgs: CommandArguments,
+        getArg: (String) -> Any?,
         path: List<Argument<*, *>>,
     ): Map<String, Any> {
         val contextArgs = mutableMapOf<String, Any>()
         for (node in path) {
             val rawValue: Any? = when (val t = node.type) {
                 is LiteralArgumentType -> t.name
-                else -> previousArgs[node.key] ?: continue
+                else -> getArg(node.key) ?: continue
             }
             val result = node.invokeTransform(Context(sender, contextArgs.toMap()), rawValue)
             if (result is TransformResult.Success<*>) {
@@ -226,17 +237,16 @@ object Compiler {
         return contextArgs
     }
 
-    private fun invokeExecutor(
+    private fun executePathCore(
         sender: CommandSender,
-        args: CommandArguments,
+        getArg: (String) -> Any?,
         path: List<Argument<*, *>>,
     ) {
         val contextArgs = mutableMapOf<String, Any>()
-
         for (node in path) {
             val rawValue: Any? = when (val t = node.type) {
                 is LiteralArgumentType -> t.name
-                else -> args[node.key]
+                else -> getArg(node.key)
             }
             val ctx = Context(sender, contextArgs.toMap())
             val transformResult = node.invokeTransform(ctx, rawValue)
@@ -253,7 +263,6 @@ object Compiler {
                 block(Context(sender, contextArgs.toMap()))?.let { contextArgs[key] = it }
             }
         }
-
         path.last().executor!!.invoke(Context(sender, contextArgs))
     }
 }

@@ -65,4 +65,6 @@ class Argument<T, K>(
     @Suppress("UNCHECKED_CAST")
     fun invokeIsTarget(context: Context, rawValue: Any?): Boolean =
         isTarget?.invoke(context, rawValue as K) ?: true
+
+    fun isWildcard(): Boolean = isTarget == null
 }
