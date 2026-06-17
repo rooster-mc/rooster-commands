@@ -4,6 +4,7 @@ import dev.rooster.commands.Argument
 import dev.rooster.commands.ArgumentType
 import dev.rooster.commands.Context
 import dev.rooster.commands.IsValidResult
+import dev.rooster.commands.SyntaxContext
 import dev.rooster.commands.SyntaxResult
 import dev.rooster.commands.TransformResult
 import dev.jorel.commandapi.CommandTree
@@ -28,7 +29,6 @@ object Compiler {
     private fun compileNode(
         argument: Argument<*, *>,
         ancestorPath: List<Argument<*, *>>,
-        routeGuard: (Map<String, Any>.() -> Boolean)? = null,
     ): CmdArg<*> {
         val fullPath = ancestorPath + argument
         val baseArg = argument.type.toCommandApiArg(argument.key)
@@ -56,11 +56,11 @@ object Compiler {
 
         if (argument.executor != null) {
             cmdArg.executes(CommandExecutor { sender, args ->
-                invokeExecutor(sender, args, fullPath, routeGuard)
+                invokeExecutor(sender, args, fullPath)
             })
         }
 
-        compileChildren(argument.children, fullPath, routeGuard).forEach { child ->
+        compileChildren(argument.children, fullPath).forEach { child ->
             cmdArg.then(child)
         }
 
@@ -70,14 +70,13 @@ object Compiler {
     private fun compileChildren(
         children: List<Argument<*, *>>,
         ancestorPath: List<Argument<*, *>>,
-        routeGuard: (Map<String, Any>.() -> Boolean)? = null,
     ): List<CmdArg<*>> {
         val groups = children.groupBy { it.type::class }
         return groups.values.flatMap { group ->
             if (group.size == 1 || group[0].type is LiteralArgumentType) {
-                group.map { compileNode(it, ancestorPath, routeGuard) }
+                group.map { compileNode(it, ancestorPath) }
             } else {
-                listOf(compileMergedNode(group, ancestorPath, routeGuard))
+                listOf(compileMergedNode(group, ancestorPath))
             }
         }
     }
@@ -86,7 +85,6 @@ object Compiler {
     private fun compileMergedNode(
         alternatives: List<Argument<*, *>>,
         ancestorPath: List<Argument<*, *>>,
-        outerRouteGuard: (Map<String, Any>.() -> Boolean)? = null,
     ): CmdArg<*> {
         val wildcards = alternatives.filter { it.isTarget == null }
         require(wildcards.size <= 1) {
@@ -99,10 +97,18 @@ object Compiler {
         val routeKey = "_route_$syntheticKey"
 
         val derivations: Map<String, Context.() -> Any?> = buildMap {
-            ordered.forEach { alt -> put(alt.key) { args[syntheticKey] } }
+            // Route key first — individual alt key derivations read it
             put(routeKey) {
                 val rawValue = args[syntheticKey]
                 ordered.indexOfFirst { alt -> alt.invokeIsTarget(this, rawValue) }.takeIf { it >= 0 }
+            }
+            // Each alt key stores the winner's T value; null if this alt lost
+            ordered.forEachIndexed { index, alt ->
+                put(alt.key) altKey@{
+                    if ((args[routeKey] as? Int) != index) return@altKey null
+                    val rawValue = args[syntheticKey]
+                    (alt.invokeTransform(this, rawValue) as? TransformResult.Success<*>)?.value
+                }
             }
         }
 
@@ -117,10 +123,10 @@ object Compiler {
             key = syntheticKey,
             type = ordered[0].type as ArgumentType<Any?>,
             transformValue = { TransformResult.Success(it) },
-            isValid = isValid@{ k, result ->
+            isValid = isValid@{ k, _ ->
                 val winner = ordered.firstOrNull { alt -> alt.invokeIsTarget(this, k) }
                     ?: return@isValid IsValidResult.Invalid {}
-                winner.invokeIsValid(this, k, result)
+                winner.invokeIsValid(this, k, winner.invokeTransform(this, k))
             },
             derivations = derivations,
             executor = mergedExecutor,
@@ -140,7 +146,15 @@ object Compiler {
         if (allSuggestions.isNotEmpty()) {
             cmdArg.replaceSuggestions(ArgumentSuggestions.stringsWithTooltips { info ->
                 val ctx = Context(info.sender(), buildPartialContext(info.sender(), info.previousArgs(), ancestorPath))
-                allSuggestions.flatMap { provider -> provider(ctx) }
+                // Filter by isTarget so only the matching branch's suggestions show.
+                // Auto-derived isTargets ignore K, so passing currentInput is safe for those.
+                // Developer-written isTargets may also use K — we pass currentInput as best effort.
+                ordered
+                    .filter { alt ->
+                        alt.suggestions != null &&
+                            try { alt.invokeIsTarget(ctx, info.currentInput()) } catch (_: Exception) { true }
+                    }
+                    .flatMap { alt -> alt.suggestions!!(ctx) }
                     .map { s -> StringTooltip.ofString(s.value, s.tooltip) }
                     .toTypedArray()
             })
@@ -148,29 +162,52 @@ object Compiler {
 
         if (mergedArg.executor != null) {
             cmdArg.executes(CommandExecutor { sender, args ->
-                invokeExecutor(sender, args, fullPath, outerRouteGuard)
+                invokeExecutor(sender, args, fullPath)
             })
         }
 
-        ordered.forEachIndexed { index, alt ->
-            val innerGuard: Map<String, Any>.() -> Boolean = { this[routeKey] == index }
-            val combinedGuard: Map<String, Any>.() -> Boolean = if (outerRouteGuard != null) {
-                { outerRouteGuard() && innerGuard() }
-            } else {
-                innerGuard
-            }
-            compileChildren(alt.children, fullPath, combinedGuard).forEach { child ->
-                cmdArg.then(child)
-            }
+        // Annotate each alternative's children with an auto-derived isTarget based on parent route,
+        // then compile the union — same-type conflicts among children are resolved by another merge.
+        val annotatedChildren = ordered.flatMapIndexed { index, alt ->
+            alt.children.map { child -> child.withRouteIsTarget(routeKey, index) }
+        }
+        compileChildren(annotatedChildren, fullPath).forEach { child ->
+            cmdArg.then(child)
         }
 
         return cmdArg
     }
 
+    @Suppress("UNCHECKED_CAST")
+    private fun Argument<*, *>.withRouteIsTarget(routeKey: String, routeIndex: Int): Argument<*, *> {
+        val existing = isTarget as (Context.(Any?) -> Boolean)?
+        val annotated: Context.(Any?) -> Boolean = { rawValue ->
+            (args[routeKey] as? Int) == routeIndex &&
+                (existing == null || existing.invoke(this, rawValue))
+        }
+        return Argument(
+            key = key,
+            type = type as ArgumentType<Any?>,
+            transformValue = transformValue as Context.(Any?) -> TransformResult<Any?>,
+            suggestions = suggestions,
+            children = children,
+            executor = executor,
+            onMissing = onMissing,
+            onMissingChild = onMissingChild,
+            isSyntaxValid = isSyntaxValid as (SyntaxContext<Any?>.() -> SyntaxResult)?,
+            isValid = isValid as (Context.(Any?, TransformResult<Any?>) -> IsValidResult)?,
+            isOptional = isOptional,
+            derivations = derivations,
+            isTarget = annotated,
+        )
+    }
+
+    // Derivations run immediately after each node's transform so that route keys set by a merged
+    // node are available to subsequent nodes' isTarget checks during the same phase-1 pass.
     private fun buildPartialContext(
         sender: CommandSender,
         previousArgs: CommandArguments,
-        path: List<Argument<*, *>>
+        path: List<Argument<*, *>>,
     ): Map<String, Any> {
         val contextArgs = mutableMapOf<String, Any>()
         for (node in path) {
@@ -182,8 +219,6 @@ object Compiler {
             if (result is TransformResult.Success<*>) {
                 result.value?.let { contextArgs[node.key] = it }
             }
-        }
-        for (node in path) {
             for ((key, block) in node.derivations) {
                 block(Context(sender, contextArgs.toMap()))?.let { contextArgs[key] = it }
             }
@@ -195,7 +230,6 @@ object Compiler {
         sender: CommandSender,
         args: CommandArguments,
         path: List<Argument<*, *>>,
-        routeGuard: (Map<String, Any>.() -> Boolean)? = null,
     ) {
         val contextArgs = mutableMapOf<String, Any>()
 
@@ -215,15 +249,11 @@ object Compiler {
                 error("Argument '${node.key}': isValid returned Valid but transformValue returned Failure")
             }
             transformResult.value?.let { contextArgs[node.key] = it }
-        }
-
-        for (node in path) {
             for ((key, block) in node.derivations) {
                 block(Context(sender, contextArgs.toMap()))?.let { contextArgs[key] = it }
             }
         }
 
-        if (routeGuard != null && !contextArgs.routeGuard()) return
         path.last().executor!!.invoke(Context(sender, contextArgs))
     }
 }
